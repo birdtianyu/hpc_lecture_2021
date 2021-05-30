@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
 // C: subC = subA * subB
 #pragma omp parallel for
     for (int i=0; i<block_size; i++)
-      for (int k=0; k<N; k++)
+      for (int k=0; k<N; k++)  // Swapping Loop Order
         for (int j=0; j<block_size; j++)
         {
           subC[N*i+j+offset] += subA[N*i+k] * subB[block_size*k+j];
@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
 
 #pragma omp parallel for
   for (int i=0; i<N; i++)
-    for (int k=0; k<N; k++)
+    for (int k=0; k<N; k++)  // Swapping Loop Order
       for (int j=0; j<N; j++)
         C[N*i+j] -= A[N*i+k] * B[N*k+j];
 
