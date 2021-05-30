@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 #include <chrono>
+#include <immintrin.h>
 using namespace std;
 
 int main(int argc, char** argv) {
@@ -12,7 +13,7 @@ int main(int argc, char** argv) {
   MPI_Comm_size(MPI_COMM_WORLD, &size);   // Get the number of processes in the process group
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // Get the current process number
 
-  const int N = 256;
+  const int N = 1024;
   int block_size = N/size; // block size
   vector<float> A(N*N);
   vector<float> B(N*N);
