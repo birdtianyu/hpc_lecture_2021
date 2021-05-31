@@ -5,6 +5,7 @@
 #include <vector>
 #include <chrono>
 #include <immintrin.h>
+#include <algorithm>
 using namespace std;
 
 int main(int argc, char** argv) {
@@ -13,7 +14,11 @@ int main(int argc, char** argv) {
   MPI_Comm_size(MPI_COMM_WORLD, &size);   // Get the number of processes in the process group
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // Get the current process number
 
-  const int N = 1024;
+  const int N = 256;
+  const int stepk = max(int(N/64), 8);
+  const int stepj = max(int(N/32), 16);
+  // const int stepk = 8;
+  // const int stepj = 16;
   int block_size = N/size; // block size
   vector<float> A(N*N);
   vector<float> B(N*N);
@@ -22,6 +27,7 @@ int main(int argc, char** argv) {
   vector<float> subA(N*block_size);
   vector<float> subB(N*block_size);
   vector<float> subC(N*block_size, 0);
+  vector<float> recv(N*N/size);
 // A: Randomly initialize matrix A and matrix B
 #pragma omp parallel for
   for (int i=0; i<N; i++) {
@@ -48,27 +54,42 @@ int main(int argc, char** argv) {
   double comp_time = 0, comm_time = 0;
   for(int irank=0; irank<size; irank++) {
     auto tic = chrono::steady_clock::now();  // start time
+
     offset = block_size*((rank+irank) % size);
 // C: subC = subA * subB
 #pragma omp parallel for
-    for (int i=0; i<block_size; i++)
-      for (int k=0; k<N; k++)  // Swapping Loop Order
-        for (int j=0; j<block_size; j++)
-        {
-          subC[N*i+j+offset] += subA[N*i+k] * subB[block_size*k+j];
+    for (int j=0; j<block_size; j+=stepj){
+      for (int k=0; k<N; k+=stepk){
+        for (int i=0; i<block_size; i++){
+          // Cache Blocking
+          for (int sk=k; sk<k+stepk; sk++){
+            __m256 subAvec = _mm256_broadcast_ss(&subA[0]+N*i+sk);
+            for (int sj=j; sj<j+stepj; sj+=8){
+              __m256 subBvec = _mm256_loadu_ps(&subB[0]+block_size*sk+sj);
+              __m256 subCvec = _mm256_loadu_ps(&subC[0]+N*i+sj+offset);
+              subCvec = _mm256_fmadd_ps(subAvec, subBvec, subCvec);
+              _mm256_storeu_ps(&subC[0]+N*i+sj+offset, subCvec);
+              // subC[N*i+sj+offset] += subA[N*i+sk] * subB[block_size*sk+sj];
+            }
+          }
         }
+      }
+    }
     auto toc = chrono::steady_clock::now();  // finish time
     comp_time += chrono::duration<double>(toc - tic).count(); // add time
+
+
+    MPI_Request request[2];
     //    send: (buffer address, data size, data type, destination, tag，communicator)
-    MPI_Send(&subB[0], N*block_size, MPI_FLOAT, send_to, 0, MPI_COMM_WORLD);
+    MPI_Isend(&subB[0], N*N/size, MPI_FLOAT, send_to, 0, MPI_COMM_WORLD, &request[0]);
     // receive: (buffer address, data size, data type, source, tag，communicator, status)
-    MPI_Recv(&subB[0], N*block_size, MPI_FLOAT, recv_from, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Irecv(&recv[0], N*N/size, MPI_FLOAT, recv_from, 0, MPI_COMM_WORLD, &request[1]);
+    MPI_Waitall(2, request, MPI_STATUS_IGNORE);
     tic = chrono::steady_clock::now();       // communication end time
     comm_time += chrono::duration<double>(tic - toc).count();  // add communication time
   }
 
   MPI_Allgather(&subC[0], N*block_size, MPI_FLOAT, &C[0], N*block_size, MPI_FLOAT, MPI_COMM_WORLD);
-
 
 #pragma omp parallel for
   for (int i=0; i<N; i++)
@@ -93,4 +114,3 @@ int main(int argc, char** argv) {
   }
   MPI_Finalize();   // Exit MPI environment
 }
-
