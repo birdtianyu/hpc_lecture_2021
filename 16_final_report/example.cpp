@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
   vector<float> subC(N*block_size, 0);
   vector<float> recv(N*N/size);
 // A: Randomly initialize matrix A and matrix B
-#pragma omp parallel for
+#pragma omp parallel for collapse(2)
   for (int i=0; i<N; i++) {
     for (int j=0; j<N; j++) {
       A[N*i+j] = drand48();
@@ -38,11 +38,11 @@ int main(int argc, char** argv) {
   }
 // B: Initialize matrix subA and matrix subB
   int offset = block_size*rank;
-#pragma omp parallel for
+#pragma omp parallel for collapse(2)
   for (int i=0; i<block_size; i++)
     for (int j=0; j<N; j++)
       subA[N*i+j] = A[N*(i+offset)+j];
-#pragma omp parallel for
+#pragma omp parallel for collapse(2)
   for (int i=0; i<N; i++)
     for (int j=0; j<block_size; j++)
       subB[block_size*i+j] = B[N*i+j+offset];
@@ -58,9 +58,9 @@ int main(int argc, char** argv) {
     offset = block_size*((rank+irank) % size);
 // C: subC = subA * subB
 #pragma omp parallel for
-    for (int j=0; j<block_size; j+=stepj){
+    for (int i=0; i<block_size; i++){
       for (int k=0; k<N; k+=stepk){ // Swapping Loop Order
-        for (int i=0; i<block_size; i++){
+        for (int j=0; j<block_size; j+=stepj){
           // Cache Blocking
           for (int sk=k; sk<k+stepk; sk++){
             __m256 subAvec = _mm256_broadcast_ss(&subA[0]+N*i+sk);
@@ -99,8 +99,8 @@ int main(int argc, char** argv) {
 
   // Count all errors
   double err = 0;
-#pragma omp parallel for reduction(+:err)
   for (int i=0; i<N; i++)
+#pragma omp parallel for reduction(+:err)
     for (int j=0; j<N; j++)
       err += fabs(C[N*i+j]); // fabs(x): Absolute value of x
 
