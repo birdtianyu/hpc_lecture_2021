@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
 // C: subC = subA * subB
 #pragma omp parallel for
     for (int j=0; j<block_size; j+=stepj){
-      for (int k=0; k<N; k+=stepk){
+      for (int k=0; k<N; k+=stepk){ // Swapping Loop Order
         for (int i=0; i<block_size; i++){
           // Cache Blocking
           for (int sk=k; sk<k+stepk; sk++){
